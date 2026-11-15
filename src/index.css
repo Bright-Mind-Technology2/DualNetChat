@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+.app-viewport {
+  height: 100vh;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.app-min-viewport {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.welcome-stage {
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(22, 38, 72, 0.62) 0%, rgba(5, 9, 24, 0.2) 42%, transparent 72%),
+    linear-gradient(145deg, #070b1a 0%, #080d20 52%, #100a20 100%);
+}
+
+.welcome-grid {
+  z-index: -1;
+  opacity: 0.2;
+  background-image:
+    linear-gradient(rgba(125, 211, 252, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 211, 252, 0.08) 1px, transparent 1px);
+  background-position: center;
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse at center, black 0%, transparent 72%);
+}
+
+.welcome-orb {
+  z-index: -1;
+  width: min(34rem, 75vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.18;
+  animation: welcome-drift 12s ease-in-out infinite alternate;
+}
+
+.welcome-orb-cyan {
+  top: 4%;
+  left: 8%;
+  background: #06b6d4;
+}
+
+.welcome-orb-violet {
+  right: 4%;
+  bottom: -18%;
+  background: #8b5cf6;
+  animation-delay: -6s;
+}
+
+.welcome-logo-frame {
+  background: linear-gradient(145deg, rgba(103, 232, 249, 0.72), rgba(129, 140, 248, 0.45) 52%, rgba(217, 70, 239, 0.68));
+  box-shadow:
+    0 0 0 1px rgba(165, 243, 252, 0.18),
+    0 0 42px rgba(34, 211, 238, 0.2),
+    0 18px 70px rgba(99, 102, 241, 0.18);
+  animation: welcome-float 6s ease-in-out infinite;
+}
+
+.welcome-logo {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.welcome-title {
+  color: #f8fafc;
+  text-shadow: 0 0 30px rgba(103, 232, 249, 0.2);
+}
+
+.welcome-underline {
+  background: linear-gradient(90deg, #67e8f9, #818cf8 55%, #e879f9);
+  box-shadow: 0 0 22px rgba(103, 232, 249, 0.55);
+}
+
+@keyframes welcome-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes welcome-drift {
+  from { transform: translate3d(-4%, -2%, 0) scale(0.92); }
+  to { transform: translate3d(5%, 4%, 0) scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-logo-frame,
+  .welcome-orb {
+    animation: none;
+  }
+}
+
+@layer base {
+  body {
+    font-family: 'Kantumruy Pro', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+}
+
+/* Custom sleek scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}

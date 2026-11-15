@@ -1,0 +1,6 @@
+{
+  "name": "Bright Mind - Local Offline Wi-Fi Chat",
+  "description": "Bright Mind - កម្មវិធីជជែកកម្សាន្ត និងផ្ញើឯកសារតាមបណ្តាញ Wi-Fi ក្នុងស្រុក (Local LAN Offline Chat) ដោយមិនចាំបាច់មានអ៊ីនធឺណិត ដំណើរការជាមួយ Node.js, Socket.io និង React។",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
