@@ -53,7 +53,7 @@ export const VideoCallOverlay: React.FC<VideoCallOverlayProps> = ({
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500/15 text-indigo-300">
             <Video className="h-8 w-8" />
           </div>
-          <h2 className="mt-4 text-lg font-semibold text-slate-100">{t.incomingCall}</h2>
+          <h2 className={`${lang === 'km' ? 'khmer-display' : ''} mt-4 text-lg font-semibold text-slate-100`}>{t.incomingCall}</h2>
           <p className="mt-1 text-slate-300">{call.peerName}</p>
           <div className="mt-6 flex justify-center gap-4">
             <button type="button" onClick={onReject} className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-500">

@@ -6,8 +6,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#070b1a",
-  "theme_color": "#070b1a",
+  "background_color": "#f5f7fc",
+  "theme_color": "#f5f7fc",
   "icons": [
     {
       "src": "/bright-mind-icon-192.png",

@@ -1,12 +1,13 @@
 import express from 'express';
 import http from 'http';
 import https from 'https';
-import { Server as SocketIOServer } from 'socket.io';
+import { Server as SocketIOServer, type Socket } from 'socket.io';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { initializePersistence, loadPersistedState, savePersistedState } from './server-storage';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +38,17 @@ const io = new SocketIOServer(server, {
 
 const isProd = process.env.NODE_ENV === 'production';
 
+type AsyncRouteHandler = (
+  req: express.Request,
+  res: express.Response
+) => Promise<unknown>;
+
+function asyncRoute(handler: AsyncRouteHandler): express.RequestHandler {
+  return (req, res, next) => {
+    void handler(req, res).catch(next);
+  };
+}
+
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const uploadsDir = process.env.DATA_DIR
   ? path.join(dataDir, 'uploads')
@@ -63,37 +75,24 @@ interface StoredAccount {
   createdAt: number;
 }
 
-function loadStoredAccounts(): StoredAccount[] {
-  try {
-    if (fs.existsSync(usersFilePath)) {
-      const raw = fs.readFileSync(usersFilePath, 'utf-8');
-      const accounts: StoredAccount[] = JSON.parse(raw);
-      // Migrate legacy accounts without role
-      let migrated = false;
-      accounts.forEach((acc) => {
-        if (!acc.role) {
-          acc.role = acc.username === 'admin' ? 'admin' : 'user';
-          migrated = true;
-        }
-      });
-      if (migrated) {
-        saveStoredAccounts(accounts);
-      }
-      return accounts;
-    }
-  } catch (err) {
-    console.error('Error reading users file:', err);
+await initializePersistence();
+let storedAccounts = await loadPersistedState<StoredAccount[]>('users', usersFilePath, []);
+let migratedAccountRoles = false;
+storedAccounts.forEach((account) => {
+  if (!account.role) {
+    account.role = account.username === 'admin' ? 'admin' : 'user';
+    migratedAccountRoles = true;
   }
-  return [];
+});
+if (migratedAccountRoles) await savePersistedState('users', storedAccounts);
+
+function loadStoredAccounts(): StoredAccount[] {
+  return storedAccounts;
 }
 
-function saveStoredAccounts(accounts: StoredAccount[]) {
-  try {
-    fs.writeFileSync(usersFilePath, JSON.stringify(accounts, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving users file:', err);
-    throw err;
-  }
+function saveStoredAccounts(accounts: StoredAccount[]): Promise<void> {
+  storedAccounts = accounts;
+  return savePersistedState('users', accounts);
 }
 
 function hashPassword(password: string, salt: string): string {
@@ -113,7 +112,7 @@ function areFriends(firstUserId: string, secondUserId: string): boolean {
 }
 
 // Seed or ensure a default admin account exists
-function ensureDefaultAdminAccount() {
+async function ensureDefaultAdminAccount() {
   const accounts = loadStoredAccounts();
   const hasAdmin = accounts.some((acc) => acc.role === 'admin' || acc.username === 'admin');
   if (!hasAdmin) {
@@ -132,18 +131,18 @@ function ensureDefaultAdminAccount() {
       createdAt: Date.now(),
     };
     accounts.push(adminAccount);
-    saveStoredAccounts(accounts);
-    console.log('👑 Default Admin created: username="admin", password="admin123"');
+    await saveStoredAccounts(accounts);
+    console.log('👑 Default Admin created: username="admin".');
   } else {
     // Ensure the existing admin account has role = 'admin'
     const adminAcc = accounts.find((a) => a.username === 'admin');
     if (adminAcc && adminAcc.role !== 'admin') {
       adminAcc.role = 'admin';
-      saveStoredAccounts(accounts);
+      await saveStoredAccounts(accounts);
     }
   }
 }
-ensureDefaultAdminAccount();
+await ensureDefaultAdminAccount();
 
 // Active session tokens: token -> userId
 const activeTokens = new Map<string, string>();
@@ -162,7 +161,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Authentication REST APIs
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', asyncRoute(async (req, res) => {
   try {
     const { username, password, displayName, avatarColor, avatarEmoji, deviceType, role } = req.body;
 
@@ -202,7 +201,7 @@ app.post('/api/auth/register', (req, res) => {
     };
 
     accounts.push(newAccount);
-    saveStoredAccounts(accounts);
+    await saveStoredAccounts(accounts);
 
     const token = `tok_${crypto.randomBytes(24).toString('hex')}`;
     activeTokens.set(token, userId);
@@ -225,7 +224,7 @@ app.post('/api/auth/register', (req, res) => {
     console.error('Registration error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
-});
+}));
 
 app.post('/api/auth/login', (req, res) => {
   try {
@@ -387,7 +386,7 @@ app.get('/api/users/search', (req, res) => {
   res.json({ success: true, users: matches });
 });
 
-app.post('/api/friends', (req, res) => {
+app.post('/api/friends', asyncRoute(async (req, res) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/, '');
   const userId = token ? activeTokens.get(token) : undefined;
   if (!userId) return res.status(401).json({ success: false, error: 'unauthorized' });
@@ -427,7 +426,7 @@ app.post('/api/friends', (req, res) => {
   }
   account.friends = [...new Set([...(account.friends || []), friend.id])];
   friend.friends = [...new Set([...(friend.friends || []), account.id])];
-  saveStoredAccounts(accounts);
+  await saveStoredAccounts(accounts);
 
   const safeFriend = {
     id: friend.id,
@@ -448,9 +447,9 @@ app.post('/api/friends', (req, res) => {
   }
 
   res.json({ success: true, friend: safeFriend, alreadyFriends: Boolean(alreadyFriends) });
-});
+}));
 
-app.delete('/api/friends/:friendId', (req, res) => {
+app.delete('/api/friends/:friendId', asyncRoute(async (req, res) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/, '');
   const userId = token ? activeTokens.get(token) : undefined;
   if (!userId) return res.status(401).json({ success: false, error: 'unauthorized' });
@@ -467,7 +466,7 @@ app.delete('/api/friends/:friendId', (req, res) => {
 
   account.friends = (account.friends || []).filter((id) => id !== friendId);
   friend.friends = (friend.friends || []).filter((id) => id !== userId);
-  saveStoredAccounts(accounts);
+  await saveStoredAccounts(accounts);
 
   for (const [socketId, connectedUser] of connectedUsers) {
     if (connectedUser.userId === userId || connectedUser.userId === friendId) {
@@ -476,9 +475,9 @@ app.delete('/api/friends/:friendId', (req, res) => {
   }
 
   res.json({ success: true });
-});
+}));
 
-app.post('/api/blocks/:userId', (req, res) => {
+app.post('/api/blocks/:userId', asyncRoute(async (req, res) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/, '');
   const userId = token ? activeTokens.get(token) : undefined;
   if (!userId) return res.status(401).json({ success: false, error: 'unauthorized' });
@@ -496,7 +495,7 @@ app.post('/api/blocks/:userId', (req, res) => {
   account.friends = (account.friends || []).filter((id) => id !== blockedId);
   blockedUser.friends = (blockedUser.friends || []).filter((id) => id !== userId);
   account.blockedUsers = [...new Set([...(account.blockedUsers || []), blockedId])];
-  saveStoredAccounts(accounts);
+  await saveStoredAccounts(accounts);
 
   for (const [socketId, connectedUser] of connectedUsers) {
     if (connectedUser.userId === userId || connectedUser.userId === blockedId) {
@@ -505,9 +504,9 @@ app.post('/api/blocks/:userId', (req, res) => {
   }
 
   res.json({ success: true });
-});
+}));
 
-app.delete('/api/blocks/:userId', (req, res) => {
+app.delete('/api/blocks/:userId', asyncRoute(async (req, res) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/, '');
   const userId = token ? activeTokens.get(token) : undefined;
   if (!userId) return res.status(401).json({ success: false, error: 'unauthorized' });
@@ -525,7 +524,7 @@ app.delete('/api/blocks/:userId', (req, res) => {
   }
 
   account.blockedUsers = (account.blockedUsers || []).filter((id) => id !== blockedId);
-  saveStoredAccounts(accounts);
+  await saveStoredAccounts(accounts);
 
   for (const [socketId, connectedUser] of connectedUsers) {
     if (connectedUser.userId === userId || connectedUser.userId === blockedId) {
@@ -534,7 +533,7 @@ app.delete('/api/blocks/:userId', (req, res) => {
   }
 
   res.json({ success: true });
-});
+}));
 
 // Helper to get local LAN IPv4 addresses
 function getLanIpAddresses(): string[] {
@@ -684,13 +683,13 @@ interface StoredChannelState {
   members: Record<string, string[]>;
 }
 
-function loadChannelState(): StoredChannelState {
-  if (!fs.existsSync(channelStateFilePath)) {
-    return { channels: [...defaultChannels], messages: {}, members: {} };
-  }
-
+async function loadChannelState(): Promise<StoredChannelState> {
   try {
-    const stored = JSON.parse(fs.readFileSync(channelStateFilePath, 'utf-8')) as StoredChannelState;
+    const stored = await loadPersistedState<StoredChannelState>(
+      'channels',
+      channelStateFilePath,
+      { channels: [...defaultChannels], messages: {}, members: {} }
+    );
     if (
       !stored ||
       !Array.isArray(stored.channels) ||
@@ -729,12 +728,12 @@ function loadChannelState(): StoredChannelState {
 
     return stored;
   } catch (error) {
-    console.error('Error reading channel state file:', error);
+    console.error('Error reading channel state from PostgreSQL:', error);
     throw error;
   }
 }
 
-const initialChannelState = loadChannelState();
+const initialChannelState = await loadChannelState();
 let channels: Channel[] = initialChannelState.channels;
 const channelMessages = new Map<string, ChatMessage[]>(
   channels.map((channel) => [channel.id, (initialChannelState.messages[channel.id] || []).slice(-300)])
@@ -743,7 +742,7 @@ const channelMembers = new Map<string, Set<string>>(
   channels.map((channel) => [channel.id, new Set(initialChannelState.members[channel.id] || [])])
 );
 
-function persistChannelState() {
+async function persistChannelState(): Promise<void> {
   const state: StoredChannelState = {
     channels,
     messages: Object.fromEntries(channelMessages),
@@ -751,30 +750,40 @@ function persistChannelState() {
       Array.from(channelMembers, ([channelId, members]) => [channelId, Array.from(members)])
     ),
   };
-  const temporaryPath = `${channelStateFilePath}.tmp`;
   try {
-    fs.writeFileSync(temporaryPath, JSON.stringify(state, null, 2), 'utf-8');
-    fs.renameSync(temporaryPath, channelStateFilePath);
+    await savePersistedState('channels', state);
   } catch (error) {
-    if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
-    console.error('Error saving channel state file:', error);
+    console.error('Error saving channel state to PostgreSQL:', error);
     throw error;
   }
 }
 
-// Active socket sessions remain in memory; channel content is persisted to disk.
+// Active socket sessions remain in memory; channel content is persisted in PostgreSQL.
 const connectedUsers = new Map<string, User>(); // socket.id -> User
+
+async function persistSocketState(socket: Socket, operation: Promise<void>): Promise<boolean> {
+  try {
+    await operation;
+    return true;
+  } catch (error) {
+    console.error('Error persisting socket update:', error);
+    socket.emit('persistence:error', { error: 'failedToSave' });
+    return false;
+  }
+}
 
 function isChannelMember(userId: string, channelId: string): boolean {
   return channelMembers.get(channelId)?.has(userId) ?? false;
 }
 
 // Store direct messages: key = sorted userId1:userId2
-function loadDirectMessages(): Map<string, ChatMessage[]> {
-  if (!fs.existsSync(directMessagesFilePath)) return new Map();
-
+async function loadDirectMessages(): Promise<Map<string, ChatMessage[]>> {
   try {
-    const stored = JSON.parse(fs.readFileSync(directMessagesFilePath, 'utf-8')) as Record<string, ChatMessage[]>;
+    const stored = await loadPersistedState<Record<string, ChatMessage[]>>(
+      'direct-messages',
+      directMessagesFilePath,
+      {}
+    );
     if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
       throw new Error('Direct message data must be an object');
     }
@@ -785,37 +794,37 @@ function loadDirectMessages(): Map<string, ChatMessage[]> {
     }
     return new Map(Object.entries(stored));
   } catch (err) {
-    console.error('Error reading direct messages file:', err);
+    console.error('Error reading direct messages from PostgreSQL:', err);
     throw err;
   }
 }
 
-const directMessages: Map<string, ChatMessage[]> = loadDirectMessages();
+const directMessages: Map<string, ChatMessage[]> = await loadDirectMessages();
 
-function persistDirectMessages() {
+async function persistDirectMessages(): Promise<void> {
   try {
-    fs.writeFileSync(directMessagesFilePath, JSON.stringify(Object.fromEntries(directMessages), null, 2), 'utf-8');
+    await savePersistedState('direct-messages', Object.fromEntries(directMessages));
   } catch (err) {
-    console.error('Error saving direct messages file:', err);
+    console.error('Error saving direct messages to PostgreSQL:', err);
     throw err;
   }
 }
 
 // Helper to push message
-function saveMessage(channelId: string, msg: ChatMessage, recipientId?: string) {
+async function saveMessage(channelId: string, msg: ChatMessage, recipientId?: string): Promise<void> {
   if (recipientId) {
     const key = [msg.senderId, recipientId].sort().join(':::');
     const existing = directMessages.get(key) || [];
     existing.push(msg);
     if (existing.length > 200) existing.shift();
     directMessages.set(key, existing);
-    persistDirectMessages();
+    await persistDirectMessages();
   } else {
     const existing = channelMessages.get(channelId) || [];
     existing.push(msg);
     if (existing.length > 300) existing.shift();
     channelMessages.set(channelId, existing);
-    persistChannelState();
+    await persistChannelState();
   }
 }
 
@@ -905,7 +914,7 @@ io.on('connection', (socket) => {
   });
 
   // 2. User status update
-  socket.on('user:update', (updateData: Partial<User>) => {
+  socket.on('user:update', async (updateData: Partial<User>) => {
     const user = connectedUsers.get(socket.id);
     if (!user) return;
 
@@ -919,7 +928,7 @@ io.on('connection', (socket) => {
     user.lastSeen = Date.now();
     connectedUsers.set(socket.id, user);
 
-    // If registered account, persist changes to users.json on disk
+    // Persist registered account changes.
     try {
       const accounts = loadStoredAccounts();
       const accIdx = accounts.findIndex((acc) => acc.id === user.userId);
@@ -929,17 +938,19 @@ io.on('connection', (socket) => {
         if (updateData.avatarEmoji) accounts[accIdx].avatarEmoji = user.avatarEmoji;
         if (updateData.avatarImage !== undefined) accounts[accIdx].avatarImage = updateData.avatarImage;
         if (updateData.deviceType) accounts[accIdx].deviceType = user.deviceType;
-        saveStoredAccounts(accounts);
+        await saveStoredAccounts(accounts);
       }
     } catch (e) {
       console.error('Error persisting user update:', e);
+      socket.emit('persistence:error', { error: 'failedToSave' });
+      return;
     }
 
     io.emit('user:updated', user);
   });
 
   // 3. Channel create
-  socket.on('channel:create', (newChan: {
+  socket.on('channel:create', async (newChan: {
     name: string;
     nameKm?: string;
     description?: string;
@@ -978,7 +989,7 @@ io.on('connection', (socket) => {
     channels.push(createdChan);
     channelMessages.set(channelId, []);
     channelMembers.set(channelId, memberIds);
-    persistChannelState();
+    if (!await persistSocketState(socket, persistChannelState())) return;
 
     // Only the creator and invited friends receive the channel and its messages.
     connectedUsers.forEach((connectedUser, socketId) => {
@@ -989,7 +1000,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('channel:delete', (data: { channelId?: string }) => {
+  socket.on('channel:delete', async (data: { channelId?: string }) => {
     const user = connectedUsers.get(socket.id);
     if (!user || typeof data?.channelId !== 'string') return;
 
@@ -1000,14 +1011,14 @@ io.on('connection', (socket) => {
     channels = channels.filter((item) => item.id !== channel.id);
     channelMessages.delete(channel.id);
     channelMembers.delete(channel.id);
-    persistChannelState();
+    if (!await persistSocketState(socket, persistChannelState())) return;
 
     io.emit('channel:deleted', { channelId: channel.id });
     io.in(`chan:${channel.id}`).socketsLeave(`chan:${channel.id}`);
   });
 
   // 4. Send Message (Channel or Direct Message)
-  socket.on('message:send', (msgData: {
+  socket.on('message:send', async (msgData: {
     channelId?: string;
     recipientId?: string;
     text: string;
@@ -1058,7 +1069,7 @@ io.on('connection', (socket) => {
 
     if (msgData.recipientId) {
       // Direct Message
-      saveMessage('', message, msgData.recipientId);
+      if (!await persistSocketState(socket, saveMessage('', message, msgData.recipientId))) return;
 
       // Find recipient socket(s) with matching userId
       let recipientFound = false;
@@ -1072,13 +1083,13 @@ io.on('connection', (socket) => {
       socket.emit('message:direct', message);
     } else {
       // Channel message
-      saveMessage(message.channelId, message);
+      if (!await persistSocketState(socket, saveMessage(message.channelId, message))) return;
       io.to(`chan:${message.channelId}`).emit('message:new', message);
     }
   });
 
   // 5. Message reaction (toggle emoji reaction)
-  socket.on('message:react', (data: { messageId: string; channelId?: string; recipientId?: string; emoji: string }) => {
+  socket.on('message:react', async (data: { messageId: string; channelId?: string; recipientId?: string; emoji: string }) => {
     const user = connectedUsers.get(socket.id);
     if (!user) return;
 
@@ -1121,9 +1132,9 @@ io.on('connection', (socket) => {
     if (data.recipientId) {
       const conversationKey = [user.userId, data.recipientId].sort().join(':::');
       directMessages.set(conversationKey, directMessages.get(conversationKey) || []);
-      persistDirectMessages();
+      if (!await persistSocketState(socket, persistDirectMessages())) return;
     } else {
-      persistChannelState();
+      if (!await persistSocketState(socket, persistChannelState())) return;
     }
 
     const payload = {
@@ -1146,7 +1157,7 @@ io.on('connection', (socket) => {
   });
 
   // 6. Pin / Unpin Message (Channel or Direct Message)
-  socket.on('message:pin', (data: { messageId: string; channelId?: string; recipientId?: string }) => {
+  socket.on('message:pin', async (data: { messageId: string; channelId?: string; recipientId?: string }) => {
     const user = connectedUsers.get(socket.id);
     if (!user) return;
 
@@ -1159,7 +1170,7 @@ io.on('connection', (socket) => {
 
       target.isPinned = !target.isPinned;
       directMessages.set(convKey, list);
-      persistDirectMessages();
+      if (!await persistSocketState(socket, persistDirectMessages())) return;
       const payload = {
         messageId: target.id,
         recipientId: data.recipientId,
@@ -1179,7 +1190,7 @@ io.on('connection', (socket) => {
       if (!target) return;
 
       target.isPinned = !target.isPinned;
-      persistChannelState();
+      if (!await persistSocketState(socket, persistChannelState())) return;
       io.to(`chan:${data.channelId}`).emit('message:pinned', {
         messageId: target.id,
         channelId: data.channelId,
@@ -1188,7 +1199,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('message:delete', (data: { messageId: string; channelId?: string; recipientId?: string }) => {
+  socket.on('message:delete', async (data: { messageId: string; channelId?: string; recipientId?: string }) => {
     const user = connectedUsers.get(socket.id);
     if (!user || !data.messageId) return;
 
@@ -1203,7 +1214,7 @@ io.on('connection', (socket) => {
         conversationKey,
         messages.filter((message) => message.id !== data.messageId)
       );
-      persistDirectMessages();
+      if (!await persistSocketState(socket, persistDirectMessages())) return;
 
       const payload = {
         messageId: target.id,
@@ -1228,7 +1239,7 @@ io.on('connection', (socket) => {
         data.channelId,
         messages.filter((message) => message.id !== data.messageId)
       );
-      persistChannelState();
+      if (!await persistSocketState(socket, persistChannelState())) return;
       io.to(`chan:${data.channelId}`).emit('message:deleted', {
         messageId: target.id,
         channelId: data.channelId,
@@ -1236,7 +1247,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('message:edit', (data: {
+  socket.on('message:edit', async (data: {
     messageId: string;
     text: string;
     channelId?: string;
@@ -1256,7 +1267,7 @@ io.on('connection', (socket) => {
 
       target.text = text;
       directMessages.set(conversationKey, messages);
-      persistDirectMessages();
+      if (!await persistSocketState(socket, persistDirectMessages())) return;
 
       const payload = {
         messageId: target.id,
@@ -1279,7 +1290,7 @@ io.on('connection', (socket) => {
       if (!target || target.senderId !== user.userId || target.type !== 'text') return;
 
       target.text = text;
-      persistChannelState();
+      if (!await persistSocketState(socket, persistChannelState())) return;
       io.to(`chan:${data.channelId}`).emit('message:edited', {
         messageId: target.id,
         text,
@@ -1289,7 +1300,7 @@ io.on('connection', (socket) => {
   });
 
   // 7. Mark messages as read / Notify sender with read receipt ticks
-  socket.on('message:read', (data: { messageIds: string[]; channelId?: string; recipientId?: string }) => {
+  socket.on('message:read', async (data: { messageIds: string[]; channelId?: string; recipientId?: string }) => {
     const user = connectedUsers.get(socket.id);
     if (!user || !data.messageIds || data.messageIds.length === 0) return;
 
@@ -1312,7 +1323,7 @@ io.on('connection', (socket) => {
         }
       });
       directMessages.set(convKey, list);
-      persistDirectMessages();
+      if (!await persistSocketState(socket, persistDirectMessages())) return;
 
       if (updatedIds.length > 0) {
         // Emit to both recipient (reader) and sender
@@ -1344,7 +1355,7 @@ io.on('connection', (socket) => {
           }
         }
       });
-      persistChannelState();
+      if (!await persistSocketState(socket, persistChannelState())) return;
 
       if (updatedIds.length > 0) {
         io.to(`chan:${data.channelId}`).emit('message:read', {
@@ -1548,6 +1559,12 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Request failed:', error);
+    if (res.headersSent) return next(error);
+    res.status(500).json({ success: false, error: 'internalServerError' });
+  });
 
   server.listen(PORT, '0.0.0.0', () => {
     const lanIps = getLanIpAddresses();

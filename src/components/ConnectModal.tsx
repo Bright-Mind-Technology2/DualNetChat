@@ -72,7 +72,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
               <Wifi className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <h3 className="font-semibold text-slate-100 text-lg leading-tight">
+              <h3 className={`${lang === 'km' ? 'khmer-display' : ''} font-semibold text-slate-100 text-lg leading-tight`}>
                 {t.connectOtherDevices}
               </h3>
               <p className="text-xs text-emerald-400 font-medium flex items-center gap-1.5 mt-0.5">

@@ -62,6 +62,10 @@ npm run build
 npm run start
 ```
 
-Set `PORT` to the port supplied by the host. For deployment, configure a persistent volume mounted at `/data` and set `DATA_DIR=/data`. Bright Mind stores accounts, direct messages, channels, channel messages, and uploaded files under that directory. Without a persistent volume, data stored on the host's temporary filesystem may be lost during restarts or redeploys.
+Set `PORT` to the port supplied by the host. Use PostgreSQL for persistent account and chat state, and configure a persistent volume for uploaded files.
+
+For hosted deployments, provision a PostgreSQL database and set `DATABASE_URL` on the web service to its private/internal connection URL. On Render, create a PostgreSQL instance in the same region as the web service, then copy its Internal Database URL into the web service's `DATABASE_URL` environment variable. The server creates the `bright_mind_state` table on startup and stores accounts, direct messages, channels, and channel messages there. If a matching legacy JSON file exists on first startup, its contents are imported once. Production startup fails if `DATABASE_URL` is missing.
+
+Uploaded files remain on the server filesystem, so keep a persistent Render Disk mounted at `/data` and set `DATA_DIR=/data` if uploads must survive redeploys. Do not commit the database URL to the repository.
 
 Run a single server instance: connected-user and Socket.IO session state is held in memory and is not shared between multiple instances. Use HTTPS on the host for camera and microphone access.

@@ -14,6 +14,8 @@ import {
   AlertCircle,
   Loader2,
   CheckCircle2,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { User, LanInfo } from '../types/chat';
 import { Language, translations } from '../translations';
@@ -24,6 +26,8 @@ interface AuthScreenProps {
   latency: number;
   lang: Language;
   onToggleLang: () => void;
+  isLightMode: boolean;
+  onToggleTheme: () => void;
 }
 
 const EMOJI_OPTIONS = [
@@ -50,6 +54,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   latency,
   lang,
   onToggleLang,
+  isLightMode,
+  onToggleTheme,
 }) => {
   const t = translations[lang];
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -182,7 +188,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         </div>
 
         {/* Right Tools: Language & LAN status */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div className="hidden sm:flex items-center space-x-2 px-3 py-1 bg-slate-900 border border-slate-800 rounded-full text-xs text-slate-300">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -193,8 +199,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </div>
 
           <button
+            type="button"
+            onClick={onToggleTheme}
+            title={isLightMode ? t.switchToDarkMode : t.switchToLightMode}
+            aria-label={isLightMode ? t.switchToDarkMode : t.switchToLightMode}
+            aria-pressed={isLightMode}
+            className="rounded-xl border border-slate-800 bg-slate-900 p-2 text-amber-500 transition hover:bg-slate-800 cursor-pointer"
+          >
+            {isLightMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          </button>
+          <button
             onClick={onToggleLang}
-            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 rounded-xl text-xs font-bold uppercase transition cursor-pointer"
+            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 rounded-xl text-xs font-bold uppercase transition cursor-pointer"
           >
             {lang === 'km' ? 'EN' : 'ខ្មែរ'}
           </button>
@@ -209,7 +225,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <div className="inline-flex p-3 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 mb-3 shadow-inner">
               <ShieldCheck className="w-7 h-7" />
             </div>
-            <h2 className="text-xl font-bold text-slate-100 tracking-tight">
+            <h2 className={`${lang === 'km' ? 'khmer-display' : ''} text-xl font-bold text-slate-100 tracking-tight`}>
               {mode === 'login' ? t.login : t.register}
             </h2>
             <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">

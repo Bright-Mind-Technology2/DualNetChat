@@ -198,7 +198,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
               <Sparkles className="w-5 h-5" />
             </div>
-            <h3 className="font-semibold text-slate-100 text-lg">
+            <h3 className={`${lang === 'km' ? 'khmer-display' : ''} font-semibold text-slate-100 text-lg`}>
               {t.changeNickname}
             </h3>
           </div>

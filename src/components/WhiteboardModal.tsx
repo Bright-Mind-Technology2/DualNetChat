@@ -214,7 +214,7 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
               <Pen className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-semibold text-slate-100 text-base">
+              <h3 className={`${lang === 'km' ? 'khmer-display' : ''} font-semibold text-slate-100 text-base`}>
                 {t.whiteboardTitle}
               </h3>
               <p className="text-xs text-slate-400">

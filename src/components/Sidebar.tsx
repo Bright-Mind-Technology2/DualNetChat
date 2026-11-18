@@ -19,6 +19,8 @@ import {
   Palette,
   MessageSquare,
   Sparkles,
+  Sun,
+  Moon,
   LogOut,
   UserPlus,
   Search,
@@ -52,6 +54,8 @@ interface SidebarProps {
   latency: number;
   lang: Language;
   onToggleLang: () => void;
+  isLightMode: boolean;
+  onToggleTheme: () => void;
   onOpenConnectModal: () => void;
   onOpenProfileModal: () => void;
   onOpenCreateChannelModal: () => void;
@@ -101,6 +105,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   latency,
   lang,
   onToggleLang,
+  isLightMode,
+  onToggleTheme,
   onOpenConnectModal,
   onOpenProfileModal,
   onOpenCreateChannelModal,
@@ -203,7 +209,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Quick controls: Sound & Language */}
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
             <button
               onClick={onToggleSound}
               title={t.soundToggle}
@@ -213,6 +219,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }`}
             >
               {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              title={isLightMode ? t.switchToDarkMode : t.switchToLightMode}
+              aria-label={isLightMode ? t.switchToDarkMode : t.switchToLightMode}
+              aria-pressed={isLightMode}
+              className="rounded-lg p-2 text-amber-500 transition hover:bg-slate-800 cursor-pointer"
+            >
+              {isLightMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </button>
             <button
               onClick={onToggleLang}

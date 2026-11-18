@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { ArrowLeft, X, Wifi, Loader2 } from 'lucide-react';
+import { Menu, X, Wifi, Loader2 } from 'lucide-react';
 import { User, Friend, FriendSearchResult, Channel, ChatMessage, LanInfo } from './types/chat';
 import { Language, translations } from './translations';
 import { socketClient } from './services/socket';
@@ -25,6 +25,9 @@ export default function App() {
   });
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     return localStorage.getItem('bm_sound') !== 'false';
+  });
+  const [isLightMode, setIsLightMode] = useState<boolean>(() => {
+    return localStorage.getItem('bm_theme') !== 'dark';
   });
   const [chatBackground, setChatBackground] = useState<string | null>(() =>
     localStorage.getItem('bm_chat_background')
@@ -99,6 +102,20 @@ export default function App() {
     soundManager.enabled = soundEnabled;
     localStorage.setItem('bm_sound', String(soundEnabled));
   }, [soundEnabled]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light-theme', isLightMode);
+    document.documentElement.style.colorScheme = isLightMode ? 'light' : 'dark';
+    localStorage.setItem('bm_theme', isLightMode ? 'light' : 'dark');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute(
+      'content',
+      isLightMode ? '#f5f7fc' : '#070b1a'
+    );
+  }, [isLightMode]);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   // Sync language
   const handleToggleLang = () => {
@@ -995,6 +1012,8 @@ export default function App() {
         latency={latency}
         lang={lang}
         onToggleLang={handleToggleLang}
+        isLightMode={isLightMode}
+        onToggleTheme={() => setIsLightMode((previous) => !previous)}
       />
     );
   }
@@ -1041,6 +1060,8 @@ export default function App() {
           latency={latency}
           lang={lang}
           onToggleLang={handleToggleLang}
+          isLightMode={isLightMode}
+          onToggleTheme={() => setIsLightMode((previous) => !previous)}
           onOpenConnectModal={() => setIsConnectModalOpen(true)}
           onOpenProfileModal={() => setIsProfileModalOpen(true)}
           onOpenCreateChannelModal={() => setIsCreateChannelModalOpen(true)}
@@ -1060,7 +1081,7 @@ export default function App() {
             title={isMobileMenuOpen ? translations[lang].close : translations[lang].backToChats}
             aria-label={isMobileMenuOpen ? translations[lang].close : translations[lang].backToChats}
           >
-            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
           <div className="flex min-w-0 items-center gap-2">
